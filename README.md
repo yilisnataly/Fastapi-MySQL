@@ -21,7 +21,7 @@ pip3 install -r requirements.txt
 La aplicación esta estructura por los siguientes modulos:
 ```bash
 .
-└── api_flask_mysql
+└── api_mysql_app
     ├── __init__.py
     ├──app.py
     ├──config
