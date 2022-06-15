@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fast-api-app.fullname" . }}
+  labels:
+    {{- include "fast-api-app.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "fast-api-app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "fast-api-app.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "fast-api-app.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{ $mysqlDBService := printf "%s%s" .Values.mysql.fullnameOverride ":3306" }}
+      initContainers:
+        - name: wait-mysql
+          image: busybox:1.28
+          command: ['sh', '-c', 'until wget --spider -S {{ $mysqlDBService }}; do echo waiting for {{ $mysqlDBService }}; sleep 2; done']
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: {{ .Values.metrics.svc.name }}
+              containerPort: {{ .Values.metrics.svc.port }}
+              protocol: TCP
+            {{- end }}
+          env:
+          - name: USER_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: "{{ include "fast-api-app.fullname" . }}-secrets"
+                key: mysql-user
+          - name: PASSWORD_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: "{{ include "fast-api-app.fullname" . }}-secrets"
+                key: mysql-password
+          - name: HOST_DATABASE
+            value: {{ .Values.mysql.fullnameOverride }}
+          - name: PORT_DATABASE
+            value: "3306"
+          - name: NAME_DATABASE
+            value: {{ .Values.mysql.auth.database }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
